@@ -1,0 +1,68 @@
+services:
+    nextjs:
+        build:
+            dockerfile: frontend/Dockerfile
+        container_name: frontend
+        ports:
+            - "3000:3000"
+        volumes:
+            - ./frontend:/app
+        depends_on:
+            - expressjs
+
+    expressjs:
+        build:
+            dockerfile: backend/Dockerfile
+        container_name: backend
+        ports:
+            - "8080:8080"
+        env_file:
+            - backend/.env
+        volumes:
+            - ./backend:/app
+        depends_on:
+            - mongodb
+            - ai
+
+    mongodb:
+        image: mongo:latest
+        container_name: mongo
+        ports:
+            - "27017:27017"
+        environment:
+            MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+            MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+        volumes:
+            - mongo_data:/data/db
+        networks:
+            - mongo-net
+
+    mongo-express:
+        image: mongo-express:latest
+        restart: always
+        ports:
+            - "9000:9000"
+        environment:
+            PORT: ${PORT}
+            ME_CONFIG_MONGODB_ADMINUSERNAME: ${ME_CONFIG_MONGODB_ADMINUSERNAME}
+            ME_CONFIG_MONGODB_ADMINPASSWORD: ${ME_CONFIG_MONGODB_ADMINPASSWORD}
+            ME_CONFIG_MONGODB_SERVER: ${ME_CONFIG_MONGODB_SERVER}
+            ME_CONFIG_MONGODB_PORT: ${ME_CONFIG_MONGODB_PORT}
+            ME_CONFIG_BASICAUTH_USERNAME: ${ME_CONFIG_BASICAUTH_USERNAME}
+            ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD}
+        networks:
+            - mongo-net
+        depends_on:
+            - mongodb
+
+    ai:
+        provider:
+            type: model
+            options:
+                model: ai/deepseek-r1-distill-llama:latest
+
+volumes:
+    mongo_data:
+networks:
+    mongo-net:
+        driver: bridge
