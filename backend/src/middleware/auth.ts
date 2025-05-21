@@ -1,27 +1,31 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
+interface AuthRequest extends Request {
+    user?: any;
+}
+
 const JWT_SECRET = process.env.JWT_SECRET;
 
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return res.status(401).json({ error: "Unauthorized" });
+function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+    const token = req.cookies?.token;
+    if (!token) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
     }
-
-    const token = authHeader.split(" ")[1];
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET as string);
         req.user = decoded;
         next();
     } catch (err) {
-        return res.status(403).json({ message: "Invalid token" });
+        res.status(403).json({ message: "Invalid token" });
+        return;
     }
 }
 
 function requireRole(roles: string[]) {
-    return (req: Request, res: Response, next: NextFunction) => {
+    return (req: AuthRequest, res: Response, next: NextFunction) => {
         if (!req.user || !roles.includes(req.user.role)) {
             return res
                 .status(403)

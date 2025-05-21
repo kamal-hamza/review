@@ -14,7 +14,7 @@ export interface IUser {
 const userSchema = new Schema<IUser>({
     profile_pic_url: {
         type: String,
-        default: null,
+        default: "",
         required: false,
     },
     username: {
