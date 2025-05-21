@@ -66,14 +66,11 @@ async function createUser(req: Request, res: Response) {
 async function getUsers(req: Request, res: Response) {
     const token = req.cookies.token;
     if (!token) {
-        console.log("HERE");
-        res.status(401)
-            .json({
-                status: 401,
-                code: "UNAUTHORIZED",
-                message: "Authentication required. Invalid or missing token.",
-            })
-            .send();
+        res.status(401).json({
+            status: 401,
+            code: "UNAUTHORIZED",
+            message: "Authentication required. Invalid or missing token.",
+        });
         return;
     }
     try {

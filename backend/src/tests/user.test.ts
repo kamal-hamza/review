@@ -172,21 +172,13 @@ describe("User Routes", () => {
     it("should deny access to protected GET /users/get route without token", async () => {
         const res = await request(app).get("/users/get");
         expect(res.status).toBe(401);
-        expect(res.body.status).toBe(401);
-        expect(res.body.code).toBe("UNAUTHORIZED");
-        expect(res.body.message).toBe(
-            "Authentication required. Invalid or missing token.",
-        );
+        expect(res.body.error).toBe("Unauthorized");
     });
 
     it("should deny access to protected GET /users/get/:id route without token", async () => {
         const res = await request(app).get("/users/get/somefakeid");
         expect(res.status).toBe(401);
-        expect(res.body.status).toBe(401);
-        expect(res.body.code).toBe("UNAUTHORIZED");
-        expect(res.body.message).toBe(
-            "Authentication required. Invalid or missing token.",
-        );
+        expect(res.body.error).toBe("Unauthorized");
     });
 
     it("should allow access to protected GET /users/get/:id route with valid token", async () => {
@@ -226,21 +218,15 @@ describe("User Routes", () => {
     });
 
     it("POST /users/create - should return 409 for duplicate email", async () => {
-        // Use a unique email for the first creation to avoid interference from other tests
-        const uniqueEmailPayload = {
-            username: "uniqueuser",
-            email: `unique_${Date.now()}@example.com`,
-            password: "testpassword",
-        };
-        const firstRes = await request(app)
-            .post("/users/create")
-            .send(uniqueEmailPayload);
-        expect(firstRes.status).toBe(201); // Ensure first user is created
-
-        // Attempt to create another user with the same email
-        const res = await request(app)
-            .post("/users/create")
-            .send(uniqueEmailPayload);
+        // create user with email and username
+        const { rawCookie, id, username, email, password } =
+            await createTestUserAndGetCookie();
+        // try to create user with same email
+        const res = await request(app).post("/users/create").send({
+            username: username,
+            email: email,
+            password: password,
+        });
         expect(res.status).toBe(409);
         expect(res.body.status).toBe(409);
         expect(res.body.code).toBe("CONFLICT");

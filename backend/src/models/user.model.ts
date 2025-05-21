@@ -26,6 +26,7 @@ const userSchema = new Schema<IUser>({
         type: String,
         default: "",
         required: true,
+        unique: true,
     },
     password: {
         type: String,

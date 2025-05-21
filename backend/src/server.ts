@@ -25,7 +25,7 @@ app.use(cookieParser());
 // You can also create custom formats.
 app.use(morgan("dev"));
 
-// Your routes
+// routes
 app.use("/users", userRouter);
 
 // Basic error handler (optional, but good practice)
