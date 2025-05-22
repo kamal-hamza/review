@@ -1,12 +1,14 @@
 import type { Request, Response } from "express";
-import { IUser } from "../models/user.model";
+import { IUser } from "../models/user.model"; // Assuming IUser might not have password as optional for creation
 import userModel from "../models/user.model";
 import { createToken } from "../util/token";
+import bcrypt from "bcryptjs"; // Added for password hashing
+
+const SALT_ROUNDS = 10; // Standard salt rounds for bcrypt
 
 async function createUser(req: Request, res: Response) {
     const body: IUser = req.body;
     if (!body || Object.keys(body).length === 0) {
-        // Added check for empty body
         res.status(400).json({
             status: 400,
             code: "BAD_REQUEST",
@@ -28,8 +30,17 @@ async function createUser(req: Request, res: Response) {
     }
 
     try {
-        const user = await userModel.create(body);
-        const token = createToken(user);
+        // Hash the password before creating the user
+        const hashedPassword = await bcrypt.hash(body.password, SALT_ROUNDS);
+        const userDataToCreate = {
+            ...body,
+            password: hashedPassword, // Store the hashed password
+        };
+
+        const user = await userModel.create(userDataToCreate);
+        const token = createToken(user); // Assuming createToken doesn't need the password
+
+        // Ensure password is not returned
         res.status(201)
             .cookie("token", token)
             .json({
@@ -40,12 +51,11 @@ async function createUser(req: Request, res: Response) {
                     username: user.username,
                     email: user.email,
                     role: user.role,
+                    // Explicitly not including user.password
                 },
             });
         return;
     } catch (err: any) {
-        console.error("Create user error:", err);
-
         if (err.code === 11000) {
             res.status(409).json({
                 status: 409,
@@ -74,17 +84,17 @@ async function getUsers(req: Request, res: Response) {
         return;
     }
     try {
-        const users = await userModel.find();
+        // Exclude password field from the result
+        const users = await userModel.find().select("-password");
         res.status(200).json({
             status: 200,
             message: "Users retrieved successfully.",
             data: {
-                users: users,
+                users: users, // Password field is now excluded
             },
         });
         return;
     } catch (error) {
-        console.error("Get users error:", error);
         res.status(500).json({
             status: 500,
             code: "INTERNAL_SERVER_ERROR",
@@ -106,19 +116,19 @@ async function getUser(req: Request, res: Response) {
     }
     const id = req.params.id;
     if (!id) {
-        // Changed from 401 to 400 as missing ID is a bad request
         res.status(400).json({
             status: 400,
             code: "BAD_REQUEST",
             message: "User ID parameter is missing.",
         });
-        return; // Added return
+        return;
     }
     try {
-        const user = await userModel.findOne({
-            _id: id,
-        });
-        if (user?.errors || user == null) {
+        // Exclude password field from the result
+        const user = await userModel.findOne({ _id: id }).select("-password");
+
+        if (!user) {
+            // Simplified check for null user
             res.status(404).json({
                 status: 404,
                 code: "NOT_FOUND",
@@ -130,13 +140,11 @@ async function getUser(req: Request, res: Response) {
             status: 200,
             message: "User retrieved successfully.",
             data: {
-                user: user,
+                user: user, // Password field is now excluded
             },
         });
-        // .send() is not needed after .json()
         return;
     } catch (error) {
-        console.error("Get user error:", error);
         res.status(500).json({
             status: 500,
             code: "INTERNAL_SERVER_ERROR",
@@ -158,7 +166,6 @@ async function updateUser(req: Request, res: Response) {
     }
     const id = req.params.id;
     if (!id) {
-        // Changed from 401 to 400
         res.status(400).json({
             status: 400,
             code: "BAD_REQUEST",
@@ -166,30 +173,31 @@ async function updateUser(req: Request, res: Response) {
         });
         return;
     }
-    const body: IUser = req.body;
+    const body: Partial<IUser> = req.body; // Use Partial<IUser> for updates
     if (!body || Object.keys(body).length === 0) {
-        // Added check for empty body
-        // Changed from 401 to 400
         res.status(400).json({
             status: 400,
             code: "BAD_REQUEST",
             message: "Request payload is missing or empty.",
         });
-        return; // Added return
+        return;
     }
+
     try {
-        const updatedUser = await userModel.updateOne({ _id: id }, body);
+        const updateData: Partial<IUser> = { ...body };
 
-        // Mongoose updateOne result:
-        // acknowledged: boolean
-        // modifiedCount: number (docs updated)
-        // upsertedId: any (if upsert)
-        // upsertedCount: number (if upsert)
-        // matchedCount: number (docs matched query)
+        // If password is being updated, hash it
+        if (body.password) {
+            updateData.password = await bcrypt.hash(body.password, SALT_ROUNDS);
+        }
 
-        if (!updatedUser.acknowledged) {
+        const updatedUserResult = await userModel.updateOne(
+            { _id: id },
+            updateData,
+        );
+
+        if (!updatedUserResult.acknowledged) {
             res.status(500).json({
-                // If DB did not acknowledge, it's a server-side issue
                 status: 500,
                 code: "INTERNAL_SERVER_ERROR",
                 message: "Database did not acknowledge the update operation.",
@@ -197,9 +205,8 @@ async function updateUser(req: Request, res: Response) {
             return;
         }
 
-        if (updatedUser.matchedCount === 0) {
+        if (updatedUserResult.matchedCount === 0) {
             res.status(404).json({
-                // If no document matched, it's a NOT_FOUND
                 status: 404,
                 code: "NOT_FOUND",
                 message: "User with the specified ID not found for update.",
@@ -207,64 +214,34 @@ async function updateUser(req: Request, res: Response) {
             return;
         }
 
-        if (updatedUser.modifiedCount === 0 && updatedUser.matchedCount > 0) {
-            // User found, but no changes applied (data might be identical)
-            // Still retrieve and return the user as per original logic flow.
-            const user = await userModel.findById(id);
-            if (!user) {
-                // Should ideally not happen if matchedCount > 0
-                res.status(404).json({
-                    status: 404,
-                    code: "NOT_FOUND",
-                    message:
-                        "User found during update check, but could not be retrieved subsequently.",
-                });
-                return;
-            }
-            res.status(200).json({
-                status: 200,
-                message:
-                    "User data remains unchanged as provided data matched existing data.",
-                data: {
-                    user: {
-                        username: user.username,
-                        email: user.email,
-                        role: user.role,
-                    },
-                },
-            });
-            return;
-        }
-
-        const user = await userModel.findById(id);
+        // Fetch the updated user (without password) to return in the response
+        const user = await userModel.findById(id).select("-password");
 
         if (!user) {
-            // This case should ideally be caught by matchedCount === 0 earlier
-            // Or if user was deleted between update and findById
             res.status(404).json({
                 status: 404,
                 code: "NOT_FOUND",
-                message: "User not found after update operation.",
+                message:
+                    "User not found after update operation. This should not normally occur if matchedCount > 0.",
             });
             return;
         }
 
+        const message =
+            updatedUserResult.modifiedCount > 0
+                ? "User updated successfully."
+                : "User data remains unchanged as provided data matched existing data.";
+
         res.status(200).json({
             status: 200,
-            message: "User updated successfully.",
+            message: message,
             data: {
-                user: {
-                    username: user.username,
-                    email: user.email,
-                    role: user.role,
-                },
+                user: user, // user object already has password excluded
             },
         });
         return;
     } catch (error: any) {
-        console.error("Update user error:", error);
         if (error.code === 11000) {
-            // Handle potential duplicate email on update
             res.status(409).json({
                 status: 409,
                 code: "CONFLICT",
@@ -293,7 +270,6 @@ async function deleteUser(req: Request, res: Response) {
     }
     const id = req.params.id;
     if (!id) {
-        // Changed from 401 to 400
         res.status(400).json({
             status: 400,
             code: "BAD_REQUEST",
@@ -308,7 +284,6 @@ async function deleteUser(req: Request, res: Response) {
 
         if (!deletedUser.acknowledged) {
             res.status(500).json({
-                // If DB did not acknowledge
                 status: 500,
                 code: "INTERNAL_SERVER_ERROR",
                 message: "Database did not acknowledge the delete operation.",
@@ -317,7 +292,6 @@ async function deleteUser(req: Request, res: Response) {
         }
 
         if (deletedUser.deletedCount === 0) {
-            // If acknowledged but nothing deleted, user wasn't found
             res.status(404).json({
                 status: 404,
                 code: "NOT_FOUND",
@@ -325,14 +299,11 @@ async function deleteUser(req: Request, res: Response) {
             });
             return;
         }
-        // Changed from 204 to 200 to allow a response body for consistency
         res.status(200).json({
             status: 200,
             message: "User deleted successfully.",
-            // No data typically returned on delete, but message confirms action
         });
     } catch (error) {
-        console.error("Delete user error:", error);
         res.status(500).json({
             status: 500,
             code: "INTERNAL_SERVER_ERROR",

@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import morgan from "morgan"; // Import morgan
 import userRouter from "./routes/user.routes";
 import cookieParser from "cookie-parser";
+import http from "http";
 
 dotenv.config();
 
@@ -19,14 +20,12 @@ app.use(express.json());
 // Middleware to parse cookies
 app.use(cookieParser());
 
-// HTTP request logger middleware
-// Using the 'dev' format for concise output suited for development
-// Other formats: 'combined', 'common', 'short', 'tiny'
-// You can also create custom formats.
 app.use(morgan("dev"));
 
 // routes
 app.use("/users", userRouter);
+
+let server: http.Server;
 
 // Basic error handler (optional, but good practice)
 app.use(
@@ -45,8 +44,13 @@ app.use(
     },
 );
 
-app.listen(port, () => {
-    console.log(`Server Running on port ${port}`);
-});
+if (process.env.NODE_ENV !== "test") {
+    const PORT = process.env.PORT || 3000; // Or your preferred port
+    server = app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+} else {
+    server = app.listen();
+}
 
-export default app;
+export { app, server };

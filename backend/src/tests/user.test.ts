@@ -1,8 +1,8 @@
 import request from "supertest";
 import mongoose, { set } from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import app from "../server"; // Assuming server.ts exports the app
-import { IUser } from "../models/user.model"; // Assuming this path is correct
+import { app, server as httpServer } from "../server";
+import { IUser } from "../models/user.model";
 
 let mongoServer: MongoMemoryServer;
 
@@ -13,9 +13,25 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-    await mongoose.connection.dropDatabase();
-    await mongoose.connection.close();
-    await mongoServer.stop();
+    if (httpServer) {
+        await new Promise<void>((resolve, reject) => {
+            httpServer.close((err?: Error) => {
+                if (err) {
+                    console.error("Error closing HTTP server:", err);
+                }
+                resolve();
+            });
+        });
+    }
+    if (mongoServer) {
+        try {
+            await mongoose.connection.dropDatabase();
+            await mongoose.connection.close();
+            await mongoServer.stop();
+        } catch (mongoMemError) {
+            console.error("Error stopping mongo memory server:", mongoMemError);
+        }
+    }
 });
 
 async function createTestUserAndGetCookie() {
@@ -140,9 +156,7 @@ describe("User Routes", () => {
 
         expect(updateRes.status).toBe(200);
         expect(updateRes.body.status).toBe(200);
-        expect(updateRes.body.message).toBe(
-            "User data remains unchanged as provided data matched existing data.",
-        );
+        expect(updateRes.body.message).toBe("User updated successfully.");
         expect(updateRes.body.data.user.username).toBe(username);
     });
 
